@@ -1,1 +1,1 @@
-DOJO_DOCKER_IMAGE="nhsdev/gp2gp-python-dojo:24628245c5d4f4b182deb0c9a9317e6726bdbcc3"
+DOJO_DOCKER_IMAGE="pythondojotest:4"

@@ -8,7 +8,7 @@ import mesh_client
 
 from s3mesh.forwarder import MeshToS3Forwarder, RetryableException
 from s3mesh.mesh import MeshInbox
-from s3mesh.probe import LoggingProbe
+from s3mesh.monitoring.probe import LoggingProbe
 from s3mesh.s3 import S3Uploader
 
 logger = logging.getLogger(__name__)

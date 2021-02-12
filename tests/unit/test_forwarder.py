@@ -2,15 +2,7 @@ from unittest.mock import MagicMock, call
 
 import pytest
 
-from s3mesh.forwarder import (
-    COUNT_MESSAGES_EVENT,
-    FORWARD_MESSAGE_EVENT,
-    INVALID_MESH_HEADER_ERROR,
-    MESH_CLIENT_NETWORK_ERROR,
-    MISSING_MESH_HEADER_ERROR,
-    POLL_MESSAGE_EVENT,
-    RetryableException,
-)
+from s3mesh.forwarder import RetryableException
 from s3mesh.mesh import InvalidMeshHeader, MissingMeshHeader
 from tests.builders.common import a_string
 from tests.builders.forwarder import build_forwarder
@@ -189,36 +181,30 @@ def test_does_not_catch_generic_exception():
         forwarder.forward_messages()
 
 
+def _mock_probe():
+    probe = MagicMock()
+    poll_event = MagicMock()
+    forward_message_event = MagicMock()
+    probe.new_poll_messages_event.return_value = poll_event
+    probe.new_forward_message_event.return_value = forward_message_event
+    return probe
+
+
 def test_records_message_progress():
     probe = MagicMock()
-    poll_observation = MagicMock()
-    forward_observation = MagicMock()
-    probe.start_observation.side_effect = [poll_observation, forward_observation]
-
-    forwarder = build_forwarder(
-        incoming_messages=[
-            mock_mesh_message(
-                message_id="123", sender="mesh123", recipient="mesh456", file_name="a_file.dat"
-            )
-        ],
-        probe=probe,
-    )
+    message = mock_mesh_message()
+    forwarder = build_forwarder(incoming_messages=[message], probe=probe)
 
     forwarder.forward_messages()
 
-    probe.start_observation.assert_has_calls(
-        [call(POLL_MESSAGE_EVENT), call(FORWARD_MESSAGE_EVENT)], any_order=False
-    )
-    poll_observation.assert_has_calls(
-        [call.add_field("batchMessageCount", 1), call.finish()], any_order=False
-    )
-    forward_observation.assert_has_calls(
+    probe.assert_has_calls(
         [
-            call.add_field("messageId", "123"),
-            call.add_field("sender", "mesh123"),
-            call.add_field("recipient", "mesh456"),
-            call.add_field("fileName", "a_file.dat"),
-            call.finish(),
+            call.new_poll_messages_event(),
+            call.new_poll_messages_event().record_message_batch_count(1),
+            call.new_poll_messages_event().finish(),
+            call.new_forward_message_event(),
+            call.new_forward_message_event().record_message_metadata(message),
+            call.new_forward_message_event().finish(),
         ],
         any_order=False,
     )

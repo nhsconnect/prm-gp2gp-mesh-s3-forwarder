@@ -1,15 +1,8 @@
 import logging
 
 from s3mesh.mesh import InvalidMeshHeader, MeshClientNetworkError, MeshInbox, MissingMeshHeader
-from s3mesh.probe import LoggingProbe
+from s3mesh.monitoring.probe import LoggingProbe
 from s3mesh.s3 import S3Uploader
-
-INVALID_MESH_HEADER_ERROR = "INVALID_MESH_HEADER"
-MISSING_MESH_HEADER_ERROR = "MISSING_MESH_HEADER"
-MESH_CLIENT_NETWORK_ERROR = "MESH_CLIENT_NETWORK_ERROR"
-FORWARD_MESSAGE_EVENT = "FORWARD_MESH_MESSAGE"
-POLL_MESSAGE_EVENT = "POLL_MESSAGE"
-COUNT_MESSAGES_EVENT = "COUNT_MESSAGES"
 
 logger = logging.getLogger(__name__)
 
@@ -29,63 +22,42 @@ class MeshToS3Forwarder:
             self._process_message(message)
 
     def is_mailbox_empty(self):
-        observation = self._new_count_messages_observation()
+        count_messages_event = self._probe.new_count_messages_event()
         try:
             message_count = self._inbox.count_messages()
-            observation.add_field("inboxMessageCount", message_count)
+            count_messages_event.record_message_count(message_count)
             return message_count == 0
         except MeshClientNetworkError as e:
-            observation.add_field("error", MESH_CLIENT_NETWORK_ERROR)
-            observation.add_field("errorMessage", e.error_message)
+            count_messages_event.record_mesh_client_network_error(e)
             raise RetryableException()
         finally:
-            observation.finish()
+            count_messages_event.finish()
 
     def _poll_messages(self):
-        observation = self._new_poll_message_observation()
+        poll_messages_event = self._probe.new_poll_messages_event()
         try:
             messages = self._inbox.read_messages()
-            observation.add_field("batchMessageCount", len(messages))
+            poll_messages_event.record_message_batch_count(len(messages))
             return messages
         except MeshClientNetworkError as e:
-            observation.add_field("error", MESH_CLIENT_NETWORK_ERROR)
-            observation.add_field("errorMessage", e.error_message)
+            poll_messages_event.record_mesh_client_network_error(e)
             raise RetryableException()
         finally:
-            observation.finish()
-
-    def _new_forwarded_message_observation(self, message):
-        observation = self._probe.start_observation(FORWARD_MESSAGE_EVENT)
-        observation.add_field("messageId", message.id)
-        return observation
-
-    def _new_poll_message_observation(self):
-        observation = self._probe.start_observation(POLL_MESSAGE_EVENT)
-        return observation
-
-    def _new_count_messages_observation(self):
-        observation = self._probe.start_observation(COUNT_MESSAGES_EVENT)
-        return observation
+            poll_messages_event.finish()
 
     def _process_message(self, message):
-        observation = self._new_forwarded_message_observation(message)
+        forward_message_event = self._probe.new_forward_message_event()
         try:
-            observation.add_field("sender", message.sender)
-            observation.add_field("recipient", message.recipient)
-            observation.add_field("fileName", message.file_name)
+            forward_message_event.record_message_metadata(message)
             message.validate()
-            self._uploader.upload(message, observation)
+            self._uploader.upload(message, forward_message_event)
             message.acknowledge()
         except MissingMeshHeader as e:
-            observation.add_field("error", MISSING_MESH_HEADER_ERROR)
-            observation.add_field("missingHeaderName", e.header_name)
+            forward_message_event.record_missing_mesh_header(e)
         except InvalidMeshHeader as e:
-            observation.add_field("error", INVALID_MESH_HEADER_ERROR)
-            observation.add_field("expectedHeaderValue", e.expected_header_value)
-            observation.add_field("receivedHeaderValue", e.header_value)
+            forward_message_event.record_invalid_mesh_header(e)
         except MeshClientNetworkError as e:
-            observation.add_field("error", MESH_CLIENT_NETWORK_ERROR)
-            observation.add_field("errorMessage", e.error_message)
+            forward_message_event.record_mesh_client_network_error(e)
             raise RetryableException()
         finally:
-            observation.finish()
+            forward_message_event.finish()

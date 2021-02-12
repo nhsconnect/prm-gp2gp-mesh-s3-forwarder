@@ -1,8 +1,6 @@
 import logging
 from unittest.mock import MagicMock, call, patch
 
-from s3mesh.probe import LoggingObservation, LoggingProbe
-
 
 def test_observation_receives_name_from_probe():
     event_name = "an_event"

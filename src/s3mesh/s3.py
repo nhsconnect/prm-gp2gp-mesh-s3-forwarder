@@ -1,5 +1,5 @@
 from s3mesh.mesh import MeshMessage
-from s3mesh.probe import LoggingObservation
+from s3mesh.monitoring.event.forward import ForwardMessageEvent
 
 
 class S3Uploader:
@@ -7,8 +7,8 @@ class S3Uploader:
         self._s3_client = s3_client
         self._bucket_name = bucket_name
 
-    def upload(self, message: MeshMessage, observation: LoggingObservation):
+    def upload(self, message: MeshMessage, observation: ForwardMessageEvent):
         s3_file_name = message.file_name.replace(" ", "_")
         key = f"{message.date_delivered.strftime('%Y/%m/%d')}/{s3_file_name}"
         self._s3_client.upload_fileobj(message, self._bucket_name, key)
-        observation.add_field("s3Key", key)
+        observation.record_s3_key(key)
